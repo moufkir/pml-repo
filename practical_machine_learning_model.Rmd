@@ -1,0 +1,173 @@
+---
+title: "Practical Machine Learning Project"
+author: "Mohammed Ait-Oufkir"
+date: "10 September 2018"
+sansfont: 'Calibri Light'
+font: 'Calibri Light'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary
+Collecting large amount data about personal activity is now accessible due to the availabilty of devices such as *Jawbone Up*, *Nike FuelBand*, and *Fitbit*. The analysis of this data opens new perspective in understanding the patterns in human behaviour, health assessment and activities quantification.
+
+The goal of this project is to analyse and predict the qualitative activity recognition (the way subjects perform Unilateral Dumbbell Biceps Curl exercice).
+The quality of the activity is captured in the depenent variable "classe" which is split in the five following classes:
+
+*  Class A: Exactly according to the specification 
+*  Class B: Throwing the elbows to the front 
+*  Class C: Lifting the dumbbell only halfway 
+*  Class D: Lowering the dumbbell only halfway
+*  Class E: Throwing the hips to the front 
+
+
+Two models (Decision Tree and Random Forest) are explored and during the analysis a rational behind model choice will be explained.
+
+
+
+# Note on Reproduceablity
+If not installed the following packages are needed
+```{r message=FALSE, warning=FALSE}
+library(kableExtra)
+library(caret)
+library(rattle)
+#VIM: Visualization and Imputation of Missing Values
+library(VIM)
+```
+
+
+# Data
+## Loading Data
+We first get the [training data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)  this data is then split for training and test, the [validation data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) is finally used for checking the performance of the model.
+```{r }
+#url_train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+#training <- read.csv(url(url_data))
+#url_test <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+#testing <- read.csv(url(url_test))
+training <- read.csv("pml-training.csv", na.strings = c("NA", ""))
+testing <- read.csv("pml-testing.csv", na.strings = c("NA", ""))
+
+```
+The training dataframe contains **`r nrow(training)`** observations and **`r ncol(training) - 1`** independent variables.
+
+let's do some statistics around the data and its quality
+
+```{r}
+constants <- nearZeroVar(training)
+```
+
+We have **`r length(constants)`** features that have near zero variables thus it will not provide any value to our predictive model this is **`r round(length(constants)/(ncol(training) - 1),2)*100`%** of the model predictors that need to be excluded.
+
+## Cleaning data 
+
+Cleaning out constant like variables (Near zero variance variables)
+
+```{r}
+if (length(constants) >0)
+  training <- training[,-constants]
+  testing <- testing[,-constants]
+```
+
+### Dealing with NAs
+
+before any action we need first to Check the pattern of missing data
+
+```{r }
+#kable(md.pattern(training))
+aggr_plot <- aggr(training, col=c('blue','red'), numbers=TRUE, sortVars=FALSE, labels=names(training), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+
+```
+<br> 
+From the plot we can read that  98% of data is missing only certain features otherwise for rest of the features there is no NA.
+So in this case no imputation strategy will be adopted except simply excluding the features having NA.
+
+```{r}
+cols_stat <-apply(training, 2, function (x) sum(is.na(x)))
+# keep only columns having no NA
+na_cols<- names(cols_stat[cols_stat>0])
+training<- training[, !names(training) %in% na_cols]
+#we do the same for testing data
+testing<- testing[, !names(training) %in% na_cols]
+# display first 10 columns with the classe and first 5 observations
+kable(head(training[,c(1:10,ncol(training))],5))%>%
+  kable_styling(bootstrap_options = "striped", full_width = F)
+
+```
+### Other cleaning operations
+<br>
+Then remove the identifier column X
+
+```{r}
+# remove the first column which is an id column and plays no  role for prediction 
+training<- training[,-1]
+
+```
+
+
+## Cross validation
+We partition the data into 2 parts training (70%) and validation (30%)
+
+```{r}
+inTrain <- createDataPartition(training$classe, p=0.7, list = FALSE)
+trainData<- training[inTrain, ]
+validationData <- training[-inTrain, ]
+```
+
+
+#Model implementation
+
+## Decision Tree
+ 
+### Train the model
+```{r}
+set.seed(987789)
+mod_dt <- train(classe ~ ., data=trainData, method="rpart")
+fancyRpartPlot(mod_dt$finalModel)
+```
+
+
+### Assess the Model
+ 
+```{r}
+prediction_dt <- predict(mod_dt, newdata=validationData)
+confMatrix_dt <- confusionMatrix(prediction_dt, validationData$classe)
+confMatrix_dt
+```
+ With  **`r round(confMatrix_dt$overall[1],2)`**  accuracy the decision tree is not well performing in distinguishing the classes
+ 
+## Random Forest 
+ 
+### Train the model
+```{r}
+set.seed(987789)
+mod_rf <- train(classe ~ ., data = trainData, method = "rf", trControl=trainControl(method='cv', number=5),  allowParallel=TRUE)
+
+```
+
+
+### Assess the Model
+ 
+```{r}
+prediction_rf <- predict(mod_rf, validationData)
+confMatrix_rf <- confusionMatrix(prediction_rf, validationData$classe)
+confMatrix_rf
+```
+Random forest is giving around  **`r round(confMatrix_rf$overall[1],2)`**  accuracy which is better than Decsion Tree
+
+#Make the prediction on the 
+
+As Random Forest is the better than Decision Tree it is used to predict the classes on test dataset
+
+```{r}
+prediction_rf2 <- predict(mod_rf, testing)
+prediction_rf2
+```
+
+
+# References
+Data source : [Human Activity Recognition](http://groupware.les.inf.puc-rio.br/har)
+
+[Graphical Presentation of Missing Data VIM Package](https://datascienceplus.com/graphical-presentation-of-missing-data-vim-package/)
